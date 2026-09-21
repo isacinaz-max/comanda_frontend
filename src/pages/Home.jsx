@@ -12,7 +12,7 @@ import {
   Utensils,
 } from 'lucide-react'
 import useStore from '../store/useStore'
-import { getMesaById, updateMesaSituacao, getComandaById } from '../services/api'
+import { getMesaById, updateMesaSituacao, getComandaByMesaId } from '../services/api'
 
 function LoadingScreen() {
   return (
@@ -71,14 +71,11 @@ export default function Home() {
       const data = await getMesaById(numero)
       setMesaData(data)
 
-      if (data.comanda_id || data.comandaAberta) {
-        const comandaId = data.comanda_id || data.comandaAberta
-        try {
-          const comandaInfo = await getComandaById(comandaId)
-          setComandaData(comandaInfo)
-        } catch {
-          setComandaData(null)
-        }
+      try {
+        const comandaInfo = await getComandaByMesaId(data.id)
+        setComandaData(comandaInfo)
+      } catch {
+        setComandaData(null)
       }
     } catch (err) {
       setMesaData(null)

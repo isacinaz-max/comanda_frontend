@@ -750,7 +750,7 @@ export default function Cardapio() {
       <div style={{ padding: '12px 20px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', background: '#FFF0ED', borderRadius: '12px' }}>
           <span style={{ width: '6px', height: '6px', background: '#10B981', borderRadius: '50%', animation: 'pulse-dot 2s infinite' }} />
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#C94F3E' }}>Alberto para pedido</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#C94F3E' }}>Aberto para pedido</span>
         </div>
       </div>
 

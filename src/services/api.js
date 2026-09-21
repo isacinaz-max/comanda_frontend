@@ -158,6 +158,11 @@ export const getAdicionais = async (comandaId) => {
   return response.data
 }
 
+export const getPagamentosParciais = async (comandaId) => {
+  const response = await api.get(`/comandas/${comandaId}/pagamentos`)
+  return response.data
+}
+
 export const getComplementosByCategoria = async (categoriaId) => {
   const response = await api.get(`/complementos/categoria/${categoriaId}`)
   return response.data
@@ -169,7 +174,7 @@ export const addComplementos = async (comandaId, complementos) => {
 }
 
 export const getItensComComplementos = async (comandaId) => {
-  const response = await api.get(`/comandas/${comandaId}/itens_complementos`)
+  const response = await api.get(`/comandas/${comandaId}/detalhes_complementos`)
   return response.data
 }
 

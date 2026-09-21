@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
-import { updateComanda, addItemComanda, getComandaById, createComanda, updateMesaSituacao, getNextIndexPreparo, insertAdicionais, addComplementos, API_BASE_URL } from '../services/api'
+import { updateComanda, addItemComanda, getComandaByMesaId, createComanda, updateMesaSituacao, getNextIndexPreparo, insertAdicionais, addComplementos, API_BASE_URL } from '../services/api'
 import ConfirmAnimation from '../components/ConfirmAnimation'
 
 function formatCurrency(value) {
@@ -58,6 +58,7 @@ export default function Pedido() {
   const [editingObs, setEditingObs] = useState(null)
   const [obsText, setObsText] = useState('')
 
+  const sendingRef = useRef(false)
   const [sending, setSending] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [sendError, setSendError] = useState(null)
@@ -126,39 +127,43 @@ export default function Pedido() {
   }, [])
 
   const handleSalvarPedido = useCallback(async () => {
-    console.log('[PEDIDO-DEBUG] handleSalvarPedido CHAMADO! mesa:', mesa, 'carrinho:', carrinho?.length)
-    if (!mesa || carrinho.length === 0) {
-      console.log('[PEDIDO-DEBUG] RETORNOU ANTES! mesa:', mesa, 'carrinho length:', carrinho?.length)
-      return
-    }
-    console.log('[PEDIDO-DEBUG] Iniciando envio...')
-    setShowPessoasModal(false)
+    if (sendingRef.current) return
+    if (!mesa || carrinho.length === 0) return
+    sendingRef.current = true
     setSending(true)
     setSendError(null)
     try {
-      let comandaAtual = comanda
+      let comandaAtual = null
 
-      if (comandaAtual?.id) {
-        try {
-          const dados = await getComandaById(comandaAtual.id)
-          if (dados.situacao !== 'P' && dados.situacao !== 'A') {
-            comandaAtual = null
-          }
-        } catch {
-          comandaAtual = null
-        }
+      console.log('[PEDIDO] Buscando comanda aberta para mesa:', mesa.id)
+      try {
+        comandaAtual = await getComandaByMesaId(mesa.id)
+        console.log('[PEDIDO] Comanda encontrada via mesa:', comandaAtual?.id)
+      } catch {
+        console.log('[PEDIDO] Nenhuma comanda aberta para mesa')
       }
 
-      if (!comandaAtual) {
+      if (!comandaAtual?.id) {
+        console.log('[PEDIDO] Criando nova comanda para mesa:', mesa.id)
         const result = await createComanda({
-          id_mesa: mesa.id || mesa.referencia,
+          id_mesa: mesa.id,
           situacao: 'P',
           tipo: 'M',
         })
-        comandaAtual = await getComandaById(result.id)
-        useStore.getState().setComanda(comandaAtual)
-        await updateMesaSituacao(mesa.id || mesa.referencia, 'O')
+        console.log('[PEDIDO] Comanda criada:', result.id)
+        try {
+          comandaAtual = await getComandaByMesaId(mesa.id)
+        } catch {
+          comandaAtual = { id: result.id }
+        }
       }
+      useStore.getState().setComanda(comandaAtual)
+      if (comandaAtual.situacao !== 'P' && comandaAtual.situacao !== 'A') {
+        useStore.getState().setComanda(null)
+        setSendError('Mesa já possui comanda ativa em andamento.')
+        return
+      }
+      await updateMesaSituacao(mesa.id, 'O')
 
       const total = carrinho.reduce((acc, item) => {
         const preco = item.produto.valor_venda || item.produto.preco || 0
@@ -169,11 +174,14 @@ export default function Pedido() {
         return acc + preco * item.quantidade + complementosTotal
       }, 0)
 
+      const valorExistente = Number(comandaAtual.valor) || 0
+      const subtotalExistente = Number(comandaAtual.subtotal) || 0
+
       await updateComanda(comandaAtual.id, {
         situacao: 'P',
         qtde_pessoas: qtdePessoas,
-        valor: total,
-        subtotal: total,
+        valor: valorExistente + total,
+        subtotal: subtotalExistente + total,
       })
 
       let itemCounter = 1
@@ -285,9 +293,10 @@ export default function Pedido() {
     } catch (err) {
       setSendError(err.response?.data?.message || 'Erro ao enviar pedido. Tente novamente.')
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
-  }, [mesa, comanda, carrinho, qtdePessoas, clearCarrinho])
+  }, [mesa, carrinho, qtdePessoas, clearCarrinho])
 
   const handleConfirmarPedido = useCallback(() => {
     if (carrinho.length === 0) return
@@ -454,7 +463,7 @@ export default function Pedido() {
               <div className="pm-value">{qtdePessoas}</div>
               <button onClick={() => setQtdePessoas(qtdePessoas + 1)}>+</button>
             </div>
-            <button className="pm-confirm" onClick={handleSalvarPedido}>
+            <button className="pm-confirm" onClick={handleSalvarPedido} disabled={sending}>
               💾 Salvar Pedido · {formatCurrency(cartTotal)}
             </button>
             <button className="pm-cancel" onClick={() => setShowPessoasModal(false)}>Cancelar</button>
@@ -467,16 +476,16 @@ export default function Pedido() {
         <div style={{ padding: '20px 20px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <button onClick={() => navigate('/' + mesa?.id)} style={{ width: '40px', height: '40px', border: 'none', borderRadius: '50%', background: '#EEF0F2', color: '#2D3436', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
+              <button onClick={() => navigate('/' + mesa?.token)} style={{ width: '40px', height: '40px', border: 'none', borderRadius: '50%', background: '#EEF0F2', color: '#2D3436', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
               <span style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#E85D4A' }}>🛒</span> Mesa {mesa?.referencia || mesa?.id} — Meu Carrinho
+                <span style={{ color: '#E85D4A' }}>🛒</span> Mesa {mesa?.descricao || mesa?.id} — Meu Carrinho
               </span>
             </div>
             <button onClick={handleClearCart} style={{ width: '40px', height: '40px', border: 'none', borderRadius: '50%', background: 'transparent', color: '#8B95A1', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Limpar carrinho">🗑️</button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '10px 14px', background: '#FFF0ED', borderRadius: '12px' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 600, color: '#C94F3E' }}>
-              🪑 Mesa {mesa?.referencia || mesa?.id}
+              🪑 Mesa {mesa?.descricao || mesa?.id}
             </span>
             <span style={{ width: '1px', height: '20px', background: 'rgba(232, 93, 74, 0.2)' }} />
             <span style={{ fontSize: '12px', color: '#6C7A8A', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -506,7 +515,7 @@ export default function Pedido() {
             <div style={{ fontSize: '72px', color: '#DDE1E6', marginBottom: '16px' }}>🛒</div>
             <h3 style={{ fontSize: '20px', color: '#2D3436', marginBottom: '8px' }}>Seu carrinho está vazio</h3>
             <p style={{ fontSize: '14px', marginBottom: '24px' }}>Que tal explorar nosso menu e adicionar alguns pratos deliciosos?</p>
-            <button onClick={() => navigate('/' + mesa?.id)} style={{ background: '#E85D4A', color: 'white', border: 'none', padding: '12px 32px', borderRadius: '50px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 16px rgba(232, 93, 74, 0.3)' }}>
+            <button onClick={() => navigate('/' + mesa?.token)} style={{ background: '#E85D4A', color: 'white', border: 'none', padding: '12px 32px', borderRadius: '50px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 16px rgba(232, 93, 74, 0.3)' }}>
               🍽️ Explorar Menu
             </button>
           </div>

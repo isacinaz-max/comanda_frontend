@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
-import { getComandaById, getItensComanda, getMesaById, updateMesaSituacao, getAdicionais, getItensComComplementos, API_BASE_URL } from '../services/api'
+import { getComandaById, getItensComanda, getMesaById, updateMesaSituacao, getAdicionais, getItensComComplementos, getPagamentosParciais, API_BASE_URL } from '../services/api'
 
 function formatCurrency(value) {
   const num = Number(value) || 0
@@ -49,6 +49,7 @@ export default function Acompanhar() {
   const { mesa, comanda, setComanda } = useStore()
   const [itensComanda, setItensComanda] = useState([])
   const [adicionais, setAdicionais] = useState([])
+  const [pagamentos, setPagamentos] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -62,15 +63,17 @@ export default function Acompanhar() {
     setLoading(true)
     setError(null)
     try {
-      const [comandaData, itens, adic] = await Promise.all([
+      const [comandaData, itens, adic, pag] = await Promise.all([
         getComandaById(currentComanda.id),
         getItensComComplementos(currentComanda.id),
         getAdicionais(currentComanda.id).catch(() => []),
+        getPagamentosParciais(currentComanda.id).catch(() => []),
       ])
       console.log('[ACOMPANHAR] itens:', itens)
       setComanda(comandaData)
       setItensComanda(Array.isArray(itens) ? itens : itens?.data || [])
       setAdicionais(Array.isArray(adic) ? adic : adic?.data || [])
+      setPagamentos(Array.isArray(pag) ? pag : pag?.data || [])
     } catch (e) {
       console.error('[ACOMPANHAR] erro:', e)
       setError('Erro ao carregar pedido')
@@ -86,7 +89,7 @@ export default function Acompanhar() {
       console.log('[ACOMPANHAR] checkMesa - mesa:', currentMesa?.id, 'comanda:', currentComanda?.id)
       if (!currentMesa?.id) { setLoading(false); return }
       try {
-        const data = await getMesaById(currentMesa.id)
+        const data = await getMesaById(currentMesa.token)
         const livre = data.situacao === 'L' || data.situacao === 'Livre' || data.situacao === 'D'
         console.log('[ACOMPANHAR] situacao:', data.situacao, 'livre:', livre)
         if (livre) {
@@ -104,15 +107,17 @@ export default function Acompanhar() {
       if (curComanda?.id) {
         try {
           setLoading(true)
-          const [comandaData, itens, adic] = await Promise.all([
+          const [comandaData, itens, adic, pag] = await Promise.all([
             getComandaById(curComanda.id),
             getItensComComplementos(curComanda.id),
             getAdicionais(curComanda.id).catch(() => []),
+            getPagamentosParciais(curComanda.id).catch(() => []),
           ])
           console.log('[ACOMPANHAR] itens:', itens)
           setComanda(comandaData)
           setItensComanda(Array.isArray(itens) ? itens : itens?.data || [])
           setAdicionais(Array.isArray(adic) ? adic : adic?.data || [])
+          setPagamentos(Array.isArray(pag) ? pag : pag?.data || [])
         } catch (e) {
           console.error('[ACOMPANHAR] erro load:', e)
           setError('Erro ao carregar pedido')
@@ -192,9 +197,9 @@ export default function Acompanhar() {
       <div style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
         <div style={{ padding: '20px 20px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button onClick={() => navigate('/' + mesa?.id)} style={{ width: '40px', height: '40px', border: 'none', borderRadius: '50%', background: '#EEF0F2', color: '#2D3436', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
+            <button onClick={() => navigate('/' + mesa?.token)} style={{ width: '40px', height: '40px', border: 'none', borderRadius: '50%', background: '#EEF0F2', color: '#2D3436', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
             <div>
-              <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#2D3436' }}>Mesa {mesa.referencia || mesa.id} — Pedido Confirmado</h1>
+              <h1 style={{ fontSize: '18px', fontWeight: 700, color: '#2D3436' }}>Mesa {mesa.descricao || mesa.id} — Pedido Confirmado</h1>
               <p style={{ fontSize: '12px', color: '#8B95A1' }}>Acompanhe seu pedido</p>
             </div>
           </div>
@@ -207,7 +212,7 @@ export default function Acompanhar() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Mesa</p>
-            <p style={{ fontSize: '28px', fontWeight: 700, lineHeight: 1.1 }}>#{mesa.referencia || mesa.id}</p>
+            <p style={{ fontSize: '28px', fontWeight: 700, lineHeight: 1.1 }}>#{mesa.descricao || mesa.id}</p>
           </div>
           <div style={{ textAlign: 'center' }}>
             <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Abertura</p>
@@ -327,13 +332,48 @@ export default function Acompanhar() {
               <span style={{ fontSize: '16px', fontWeight: 700, color: '#2D3436' }}>Total</span>
               <span style={{ fontSize: '22px', fontWeight: 700, color: '#E85D4A' }}>{formatCurrency(totalGeral)}</span>
             </div>
+
+            {pagamentos.length > 0 && (
+              <div style={{ marginTop: '16px' }}>
+                <p style={{ fontSize: '12px', color: '#8B95A1', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 500, marginBottom: '8px' }}>Pagamentos</p>
+                {pagamentos.map((pag, idx) => (
+                  <div key={idx} style={{ padding: '10px 12px', background: '#F0FDF4', borderRadius: '10px', marginBottom: '8px', border: '1px solid #BBF7D0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#166534' }}>{pag.descricao}</span>
+                        <span style={{ fontSize: '12px', color: '#6C7A8A', marginLeft: '8px' }}>— {pag.nome_cliente}</span>
+                      </div>
+                      <span style={{ fontSize: '14px', fontWeight: 700, color: '#16A34A' }}>{formatCurrency(pag.valor_pago)}</span>
+                    </div>
+                  </div>
+                ))}
+                {(() => {
+                  const totalPago = pagamentos.reduce((acc, p) => acc + (Number(p.valor_pago) || 0), 0)
+                  const restante = totalGeral - totalPago
+                  return (
+                    <>
+                      <div style={{ padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #EEF0F2', marginTop: '4px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#16A34A' }}>Pago</span>
+                        <span style={{ fontSize: '14px', fontWeight: 700, color: '#16A34A' }}>{formatCurrency(totalPago)}</span>
+                      </div>
+                      {restante > 0 && (
+                        <div style={{ padding: '8px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#DC2626' }}>Restante</span>
+                          <span style={{ fontSize: '14px', fontWeight: 700, color: '#DC2626' }}>{formatCurrency(restante)}</span>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Novo Pedido Fixed Bottom */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid #EEF0F2', padding: '16px 20px 20px' }}>
-        <button onClick={() => { useStore.getState().clearCarrinho(); navigate('/' + mesa?.id) }} style={{ width: '100%', padding: '16px', background: '#E85D4A', color: 'white', border: 'none', borderRadius: '16px', fontSize: '16px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 4px 16px rgba(232, 93, 74, 0.3)', transition: 'all 0.2s' }}>
+        <button onClick={() => { useStore.getState().clearCarrinho(); navigate('/' + mesa?.token) }} style={{ width: '100%', padding: '16px', background: '#E85D4A', color: 'white', border: 'none', borderRadius: '16px', fontSize: '16px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow: '0 4px 16px rgba(232, 93, 74, 0.3)', transition: 'all 0.2s' }}>
           🍽️ Novo Pedido →
         </button>
       </div>

@@ -40,15 +40,14 @@ const useStore = create(
   initMesa: async (mesaId) => {
     if (_initMesaLock) return
     _initMesaLock = true
-    const numId = parseInt(mesaId, 10)
-    if (isNaN(numId)) {
+    if (!mesaId || !mesaId.toString().trim()) {
       set({ error: 'Mesa inválida', initialized: true })
       _initMesaLock = false
       return
     }
     set({ loading: true, error: null })
     try {
-      const mesaData = await getMesaById(numId)
+      const mesaData = await getMesaById(mesaId)
 
       let comanda = null
       try {
@@ -81,11 +80,11 @@ const useStore = create(
   setMesa: async (mesa) => {
     set({ loading: true, error: null })
     try {
-      const mesaData = await getMesaById(mesa.referencia || mesa.id)
+      const mesaData = await getMesaById(mesa.token)
       set({ mesa: mesaData, loading: false })
     } catch (error) {
       set({
-        mesa: { referencia: mesa.referencia || mesa.id, situacao: 'Livre' },
+        mesa: { token: mesa.token, situacao: 'Livre' },
         loading: false,
         error: null,
       })

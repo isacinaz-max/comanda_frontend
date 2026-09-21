@@ -52,7 +52,7 @@ function AcompanharRoute() {
   const mesa = useStore((s) => s.mesa)
   const comanda = useStore((s) => s.comanda)
   if (!mesa) return <Navigate to="/" replace />
-  if (!comanda) return <Navigate to={'/' + mesa.id} replace />
+  if (!comanda) return <Navigate to={'/' + mesa.token} replace />
   return <Acompanhar />
 }
 
