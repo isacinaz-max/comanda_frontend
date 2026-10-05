@@ -72,7 +72,7 @@ function getProductEmoji(catName) {
   return PRODUCT_EMOJIS[(catName || '').toUpperCase().trim()] || '🍽️'
 }
 
-function ProdutoCard({ produto, onProductClick, onQuickAdd, cartItem }) {
+function ProdutoCard({ produto, onProductClick, onQuickAdd, cartItem, blocked }) {
   const preco = produto.valor_venda || produto.preco || 0
   const catName = produto.nome_categoria || ''
   const emoji = produto.emoji || getProductEmoji(catName)
@@ -84,7 +84,7 @@ function ProdutoCard({ produto, onProductClick, onQuickAdd, cartItem }) {
   const hasFoto = !!produto.id && !imgError
 
   return (
-    <div className="menu-item" onClick={() => onProductClick(produto)}>
+    <div className="menu-item" style={blocked ? { opacity: 0.6, pointerEvents: 'none' } : undefined} onClick={() => !blocked && onProductClick(produto)}>
       <div className="item-image">
         {hasFoto && (
           <img
@@ -110,6 +110,7 @@ function ProdutoCard({ produto, onProductClick, onQuickAdd, cartItem }) {
           </span>
           <button
             className={`add-btn ${hasCart ? 'added' : ''}`}
+            style={blocked ? { pointerEvents: 'none', opacity: 0.5 } : undefined}
             onClick={(e) => {
               e.stopPropagation()
               onQuickAdd(produto, 1)
@@ -225,6 +226,7 @@ export default function Cardapio() {
   }, [fetchProdutos])
 
   const handleProductClick = useCallback(async (produto) => {
+    if (mesa?.situacao === 'B') return
     console.log('[CLICK] Produto clicado:', produto.nome, 'id_grupo:', produto.id_grupo, 'possui_combinado:', produto.possui_combinado)
     if (produto.possui_combinado === 'S') {
       console.log('[CLICK] Abrindo PizzaCombiner')
@@ -246,10 +248,11 @@ export default function Cardapio() {
       setSelectedProduto(produto)
       setIsModalOpen(true)
     }
-  }, [])
+  }, [mesa])
 
   const handleAddToCart = useCallback(
     async (produto, quantidade, observacao) => {
+      if (mesa?.situacao === 'B') return
       console.log('[COMPLEMENT] handleAddToCart produto:', produto.nome, 'observacao:', observacao)
       const categoriaId = produto.id_grupo || produto.id_categoria
       if (categoriaId) {
@@ -277,7 +280,7 @@ export default function Cardapio() {
       setSelectedProduto(null)
       showToast(`${produto.nome} adicionado! 🍽️`)
     },
-    [addItem, showToast]
+    [mesa, addItem, showToast]
   )
 
   const handleComplementConfirm = useCallback(
@@ -352,6 +355,7 @@ export default function Cardapio() {
 
   const handleQuickAdd = useCallback(
     async (produto, delta) => {
+      if (mesa?.situacao === 'B') return
       if (delta > 0 && produto.possui_combinado === 'S') {
         const allProdutos = useStore.getState().produtos
         const sabores = allProdutos.filter(
@@ -384,7 +388,7 @@ export default function Cardapio() {
         showToast(`${produto.nome} adicionado! 🍽️`)
       }
     },
-    [addItem, carrinho, showToast]
+    [mesa, addItem, carrinho, showToast]
   )
 
   const handleCloseModal = useCallback(() => {
@@ -748,10 +752,17 @@ export default function Cardapio() {
 
       {/* Mesa Info */}
       <div style={{ padding: '12px 20px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', background: '#FFF0ED', borderRadius: '12px' }}>
-          <span style={{ width: '6px', height: '6px', background: '#10B981', borderRadius: '50%', animation: 'pulse-dot 2s infinite' }} />
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#C94F3E' }}>Aberto para pedido</span>
-        </div>
+        {mesa?.situacao === 'B' ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', background: '#FEF2F2', borderRadius: '12px', border: '1px solid #FECACA' }}>
+            <span style={{ width: '6px', height: '6px', background: '#EF4444', borderRadius: '50%' }} />
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#DC2626' }}>Mesa Bloqueada — favor verificar com o atendente</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 14px', background: '#FFF0ED', borderRadius: '12px' }}>
+            <span style={{ width: '6px', height: '6px', background: '#10B981', borderRadius: '50%', animation: 'pulse-dot 2s infinite' }} />
+            <span style={{ fontSize: '13px', fontWeight: 600, color: '#C94F3E' }}>Aberto para pedido</span>
+          </div>
+        )}
       </div>
 
       {/* Search + Categories */}
@@ -831,7 +842,7 @@ export default function Cardapio() {
                 </div>
                 <div className="menu-grid">
                   {produtos.map((produto) => (
-                    <ProdutoCard key={produto.id} produto={produto} onProductClick={handleProductClick} onQuickAdd={handleQuickAdd} cartItem={carrinho.find((c) => c.produto.id === produto.id)} />
+                    <ProdutoCard key={produto.id} produto={produto} onProductClick={handleProductClick} onQuickAdd={handleQuickAdd} cartItem={carrinho.find((c) => c.produto.id === produto.id)} blocked={mesa?.situacao === 'B'} />
                   ))}
                 </div>
               </div>
@@ -840,14 +851,14 @@ export default function Cardapio() {
         ) : (
           <div className="menu-grid">
             {currentProdutos.map((produto) => (
-              <ProdutoCard key={produto.id} produto={produto} onProductClick={handleProductClick} onQuickAdd={handleQuickAdd} cartItem={carrinho.find((c) => c.produto.id === produto.id)} />
+              <ProdutoCard key={produto.id} produto={produto} onProductClick={handleProductClick} onQuickAdd={handleQuickAdd} cartItem={carrinho.find((c) => c.produto.id === produto.id)} blocked={mesa?.situacao === 'B'} />
             ))}
           </div>
         )}
       </div>
 
       {/* Floating Cart FAB */}
-      {!isModalOpen && cartCount > 0 && (
+      {!isModalOpen && cartCount > 0 && mesa?.situacao !== 'B' && (
         <button className="cart-fab" onClick={handleViewCart}>
           <span className="cart-icon">
             <ShoppingCart className="h-5 w-5" />

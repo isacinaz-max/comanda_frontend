@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
 import { getComandaById, getItensComanda, getMesaById, updateMesaSituacao, getAdicionais, getItensComComplementos, getPagamentosParciais, API_BASE_URL } from '../services/api'
@@ -19,6 +19,46 @@ const PRODUCT_EMOJIS = {
 
 function getProdutoEmoji(catName) {
   return PRODUCT_EMOJIS[(catName || '').toUpperCase().trim()] || '🍽️'
+}
+
+const STATUS_CONFIG = {
+  A: { label: 'Aguardando', color: '#F59E0B', bg: '#FEF3C7', icon: '⏳' },
+  P: { label: 'Em Produção', color: '#3B82F6', bg: '#DBEAFE', icon: '👨‍🍳' },
+  C: { label: 'Pronto', color: '#10B981', bg: '#D1FAE5', icon: '✅' },
+  E: { label: 'Entregue', color: '#8B5CF6', bg: '#EDE9FE', icon: '🎉' },
+  S: { label: 'Enviado', color: '#F59E0B', bg: '#FEF3C7', icon: '⏳' },
+}
+
+function normalizeStatus(status) {
+  if (!status || status === 'S') return 'A'
+  return status
+}
+
+function StatusBadge({ status, cancelado }) {
+  if (cancelado) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: '4px',
+        padding: '3px 8px', borderRadius: '20px',
+        background: '#FEE2E2', color: '#DC2626',
+        fontSize: '11px', fontWeight: 600,
+      }}>
+        ❌ Cancelado
+      </span>
+    )
+  }
+  const normalized = normalizeStatus(status)
+  const config = STATUS_CONFIG[normalized] || STATUS_CONFIG.A
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '4px',
+      padding: '3px 8px', borderRadius: '20px',
+      background: config.bg, color: config.color,
+      fontSize: '11px', fontWeight: 600,
+    }}>
+      {config.icon} {config.label}
+    </span>
+  )
 }
 
 function ProdutoImage({ produtoId, catName }) {
@@ -54,6 +94,58 @@ export default function Acompanhar() {
   const [error, setError] = useState(null)
 
   const [mesaLiberada, setMesaLiberada] = useState(false)
+  const [toastMsg, setToastMsg] = useState('')
+  const [toastVisible, setToastVisible] = useState(false)
+  const [toastType, setToastType] = useState('success')
+  const toastTimeoutRef = useRef(null)
+  const prevStatusRef = useRef({})
+  const pollingRef = useRef(null)
+
+  const showToast = useCallback((msg, type = 'success') => {
+    setToastMsg(msg)
+    setToastType(type)
+    setToastVisible(true)
+    clearTimeout(toastTimeoutRef.current)
+    toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 3500)
+  }, [])
+
+  const requestNotificationPermission = useCallback(async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission()
+    }
+  }, [])
+
+  const sendBrowserNotification = useCallback((title, body) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, { body, icon: '/favicon.ico' })
+    }
+  }, [])
+
+  const detectStatusChanges = useCallback((newItens) => {
+    const prev = prevStatusRef.current
+    const changes = []
+
+    for (const item of newItens) {
+      const itemId = item.id
+      const newStatus = normalizeStatus(item.status_cozinha || item.st_status || 'A')
+      const oldStatus = prev[itemId]
+
+      if (oldStatus && oldStatus !== newStatus) {
+        const config = STATUS_CONFIG[newStatus] || STATUS_CONFIG.A
+        const nome = item.nome_produto || item.nome || 'Item'
+        changes.push({ nome, newStatus, config })
+      }
+      prev[itemId] = newStatus
+    }
+
+    if (changes.length > 0) {
+      for (const change of changes) {
+        const msg = `${change.nome} → ${change.config.label}`
+        showToast(msg, 'success')
+        sendBrowserNotification('Status do Pedido Atualizado', msg)
+      }
+    }
+  }, [showToast, sendBrowserNotification])
 
   const loadItens = useCallback(async () => {
     const currentMesa = useStore.getState().mesa
@@ -71,7 +163,10 @@ export default function Acompanhar() {
       ])
       console.log('[ACOMPANHAR] itens:', itens)
       setComanda(comandaData)
-      setItensComanda(Array.isArray(itens) ? itens : itens?.data || [])
+      const newItens = Array.isArray(itens) ? itens : itens?.data || []
+      console.log('[ACOMPANHAR] itens recebidos:', JSON.stringify(newItens.map(i => ({ id: i.id, nome: i.nome_produto, st_status: i.st_status, status_cozinha: i.status_cozinha }))))
+      detectStatusChanges(newItens)
+      setItensComanda(newItens)
       setAdicionais(Array.isArray(adic) ? adic : adic?.data || [])
       setPagamentos(Array.isArray(pag) ? pag : pag?.data || [])
     } catch (e) {
@@ -80,7 +175,7 @@ export default function Acompanhar() {
     } finally {
       setLoading(false)
     }
-  }, [setComanda])
+  }, [setComanda, detectStatusChanges])
 
   useEffect(() => {
     const checkMesa = async () => {
@@ -115,7 +210,9 @@ export default function Acompanhar() {
           ])
           console.log('[ACOMPANHAR] itens:', itens)
           setComanda(comandaData)
-          setItensComanda(Array.isArray(itens) ? itens : itens?.data || [])
+          const newItens = Array.isArray(itens) ? itens : itens?.data || []
+          detectStatusChanges(newItens)
+          setItensComanda(newItens)
           setAdicionais(Array.isArray(adic) ? adic : adic?.data || [])
           setPagamentos(Array.isArray(pag) ? pag : pag?.data || [])
         } catch (e) {
@@ -126,7 +223,20 @@ export default function Acompanhar() {
       setLoading(false)
     }
     checkMesa()
+    requestNotificationPermission()
   }, [])
+
+  useEffect(() => {
+    pollingRef.current = setInterval(() => {
+      const currentMesa = useStore.getState().mesa
+      const currentComanda = useStore.getState().comanda
+      if (currentMesa?.id && currentComanda?.id) {
+        loadItens()
+      }
+    }, 10000)
+
+    return () => clearInterval(pollingRef.current)
+  }, [loadItens])
 
   const permanencia = (() => {
     if (!comanda?.data || !comanda?.hora) return null
@@ -191,7 +301,26 @@ export default function Acompanhar() {
         .acomp-item .ai-price.cancelado { text-decoration: line-through; color: #8B95A1; }
         .acomp-item .ai-qty-price { margin-top: 2px; }
         .acomp-item .ai-unit { font-size: 12px; color: #8B95A1; }
+        .pedido-toast {
+          position: fixed; top: 20px; left: 50%;
+          transform: translateX(-50%) translateY(-100px);
+          padding: 12px 24px; border-radius: 12px;
+          font-size: 14px; font-weight: 500; z-index: 300;
+          transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          display: flex; align-items: center; gap: 10px;
+          backdrop-filter: blur(12px); white-space: nowrap;
+          background: rgba(45, 52, 54, 0.92); color: white;
+        }
+        .pedido-toast.show { transform: translateX(-50%) translateY(0); }
+        .pedido-toast.success { background: rgba(16, 185, 129, 0.92); }
+        .pedido-toast.error { background: rgba(239, 68, 68, 0.92); }
       `}</style>
+
+      {/* Toast */}
+      <div className={`pedido-toast ${toastVisible ? 'show' : ''} ${toastType}`}>
+        <span>{toastType === 'success' ? '✓' : '✕'}</span>
+        <span>{toastMsg}</span>
+      </div>
 
       {/* Header */}
       <div style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
@@ -280,12 +409,17 @@ export default function Acompanhar() {
               const cancelado = item.cancelado === 'S' || item.cancelado === true
               const complementos = item.complementos || []
               const isFirstOfCombinado = !item.id_combinado || itensComanda.findIndex((c) => c.id_combinado === item.id_combinado) === index
+              const status = normalizeStatus(item.status_cozinha || item.st_status)
+              console.log('[ACOMPANHAR] item:', nome, '| status_cozinha:', item.status_cozinha, '| st_status:', item.st_status, '| normalizado:', status)
               return (
                 <div key={item.id || index} style={{ marginBottom: '8px' }}>
                   <div className={`acomp-item ${cancelado ? 'cancelado' : ''}`} style={{ animationDelay: `${index * 0.05}s` }}>
                     <div className="ai-image"><ProdutoImage produtoId={item.id_produto} catName={catName} /></div>
                     <div className="ai-info">
                       <div className={`ai-name ${cancelado ? 'cancelado' : ''}`}>{nome}</div>
+                      <div style={{ marginTop: '4px' }}>
+                        <StatusBadge status={status} cancelado={cancelado} />
+                      </div>
                       <div className="ai-qty-price">
                         <span className="ai-unit">{qtdFormatada}x {formatCurrency(preco)}</span>
                       </div>

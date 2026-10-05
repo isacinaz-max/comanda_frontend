@@ -178,4 +178,9 @@ export const getItensComComplementos = async (comandaId) => {
   return response.data
 }
 
+export const updateItemStatus = async (itemId, status) => {
+  const response = await api.put(`/comandas/itens/${itemId}/status`, { st_status: status })
+  return response.data
+}
+
 export default api
