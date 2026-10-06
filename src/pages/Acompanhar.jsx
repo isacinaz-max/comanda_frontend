@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useStore from '../store/useStore'
-import { getComandaById, getItensComanda, getMesaById, updateMesaSituacao, getAdicionais, getItensComComplementos, getPagamentosParciais, API_BASE_URL } from '../services/api'
+import { getComandaById, getItensComanda, getMesaById, updateMesaSituacao, getAdicionais, getComandaByMesaId, getItensComComplementos, getPagamentosParciais, API_BASE_URL } from '../services/api'
 
 function formatCurrency(value) {
   const num = Number(value) || 0
@@ -197,8 +197,20 @@ export default function Acompanhar() {
       } catch (e) {
         console.error('[ACOMPANHAR] erro getMesa:', e)
       }
-      const curComanda = useStore.getState().comanda
+      let curComanda = useStore.getState().comanda
       console.log('[ACOMPANHAR] curComanda:', curComanda)
+      if (!curComanda) {
+        try {
+          curComanda = await getComandaByMesaId(currentMesa.id)
+          if (curComanda) {
+            console.log('[ACOMPANHAR] comanda carregada do backend:', curComanda.id)
+            useStore.getState().setComanda(curComanda)
+          }
+        } catch (e) {
+          console.log('[ACOMPANHAR] sem comanda aberta para a mesa', e)
+          curComanda = null
+        }
+      }
       if (curComanda?.id) {
         try {
           setLoading(true)
@@ -395,7 +407,9 @@ export default function Acompanhar() {
         ) : itensComanda.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 20px', color: '#8B95A1' }}>
             <div style={{ fontSize: '48px', color: '#DDE1E6', marginBottom: '12px' }}>🍽️</div>
-            <p style={{ fontSize: '14px' }}>Nenhum item encontrado</p>
+            <p style={{ fontSize: '14px' }}>
+              {comanda ? 'Nenhum item encontrado' : 'Seu pedido ainda não foi confirmado'}
+            </p>
           </div>
         ) : (
           <div>
